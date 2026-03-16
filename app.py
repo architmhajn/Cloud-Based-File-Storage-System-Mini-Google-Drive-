@@ -1,71 +1,153 @@
 import streamlit as st
 import os
+import json
 
-# Folder to store uploaded files
+USERS_FILE = "users.json"
 UPLOAD_FOLDER = "uploads"
 
-# Create folder if it doesn't exist
-if not os.path.exists(UPLOAD_FOLDER):
-    os.makedirs(UPLOAD_FOLDER)
+# Create folders/files if not exist
+os.makedirs(UPLOAD_FOLDER, exist_ok=True)
 
-# Sidebar
-st.sidebar.title("📁 Dashboard")
-st.sidebar.write("Mini Google Drive")
-st.sidebar.write("Manage your files easily")
+if not os.path.exists(USERS_FILE):
+    with open(USERS_FILE, "w") as f:
+        json.dump({}, f)
 
-file_count = len(os.listdir(UPLOAD_FOLDER))
-st.sidebar.metric("Total Files", file_count)
 
-# Title
-st.title("☁ Mini Google Drive")
+def load_users():
+    with open(USERS_FILE, "r") as f:
+        return json.load(f)
 
-# Multiple file upload
-uploaded_files = st.file_uploader(
-    "Upload files",
-    accept_multiple_files=True
+
+def save_users(users):
+    with open(USERS_FILE, "w") as f:
+        json.dump(users, f)
+
+
+# Session state
+if "logged_in" not in st.session_state:
+    st.session_state.logged_in = False
+
+if "username" not in st.session_state:
+    st.session_state.username = ""
+
+
+st.title("☁ Mini Cloud File Sharing")
+
+menu = st.sidebar.selectbox(
+    "Menu",
+    ["Login", "Signup", "View Profiles"]
 )
 
-# Save uploaded files
-if uploaded_files:
-    for uploaded_file in uploaded_files:
-        file_path = os.path.join(UPLOAD_FOLDER, uploaded_file.name)
+users = load_users()
 
-        with open(file_path, "wb") as f:
-            f.write(uploaded_file.getbuffer())
+# ---------------- SIGNUP ----------------
 
-        st.success(f"{uploaded_file.name} uploaded successfully!")
+if menu == "Signup":
 
-# Search bar
-search = st.text_input("🔎 Search files")
+    st.header("Create Account")
 
-st.subheader("Stored Files")
+    new_user = st.text_input("Username")
+    new_pass = st.text_input("Password", type="password")
 
-files = os.listdir(UPLOAD_FOLDER)
+    if st.button("Create Account"):
 
-# Filter files if searching
-if search:
-    files = [file for file in files if search.lower() in file.lower()]
+        if new_user in users:
+            st.error("Username already exists")
 
-# Display files
-for file in files:
+        else:
+            users[new_user] = new_pass
+            save_users(users)
 
-    col1, col2, col3 = st.columns(3)
+            os.makedirs(os.path.join(UPLOAD_FOLDER, new_user), exist_ok=True)
 
-    file_path = os.path.join(UPLOAD_FOLDER, file)
+            st.success("Account created successfully!")
 
-    with col1:
-        size = os.path.getsize(file_path) / 1024
-        st.write(f"{file} ({size:.2f} KB)")
+# ---------------- LOGIN ----------------
 
-        # Image preview
-        if file.endswith(("png", "jpg", "jpeg")):
-            st.image(file_path, width=150)
+elif menu == "Login":
 
-    with col2:
-        with open(file_path, "rb") as f:
-            st.download_button("Download", f, file_name=file)
+    st.header("Login")
 
-    with col3:
-        if st.button("Delete", key=file):
-            os.remove(file_path)
-            st.rerun()
+    user = st.text_input("Username")
+    password = st.text_input("Password", type="password")
+
+    if st.button("Login"):
+
+        if user in users and users[user] == password:
+            st.session_state.logged_in = True
+            st.session_state.username = user
+            st.success("Logged in successfully")
+
+        else:
+            st.error("Invalid credentials")
+
+# ---------------- VIEW PROFILES ----------------
+
+elif menu == "View Profiles":
+
+    st.header("User Profiles")
+
+    profile = st.text_input("Enter username to view profile")
+
+    if profile:
+
+        profile_folder = os.path.join(UPLOAD_FOLDER, profile)
+
+        if os.path.exists(profile_folder):
+
+            st.subheader(f"{profile}'s Files")
+
+            files = os.listdir(profile_folder)
+
+            for file in files:
+
+                file_path = os.path.join(profile_folder, file)
+
+                col1, col2, col3 = st.columns(3)
+
+                with col1:
+                    st.write(file)
+
+                with col2:
+                    with open(file_path, "rb") as f:
+                        st.download_button("Download", f, file_name=file)
+
+                with col3:
+                    if st.session_state.logged_in and st.session_state.username == profile:
+                        if st.button("Delete", key=file):
+                            os.remove(file_path)
+                            st.rerun()
+
+        else:
+            st.error("User not found")
+
+# ---------------- USER DASHBOARD ----------------
+
+if st.session_state.logged_in:
+
+    st.sidebar.write(f"Logged in as **{st.session_state.username}**")
+
+    if st.sidebar.button("Logout"):
+        st.session_state.logged_in = False
+        st.session_state.username = ""
+        st.rerun()
+
+    st.header("Upload Files")
+
+    uploaded_files = st.file_uploader(
+        "Upload files",
+        accept_multiple_files=True
+    )
+
+    if uploaded_files:
+
+        user_folder = os.path.join(UPLOAD_FOLDER, st.session_state.username)
+
+        for uploaded_file in uploaded_files:
+
+            file_path = os.path.join(user_folder, uploaded_file.name)
+
+            with open(file_path, "wb") as f:
+                f.write(uploaded_file.getbuffer())
+
+            st.success(f"{uploaded_file.name} uploaded!")
